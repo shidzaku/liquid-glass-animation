@@ -1,67 +1,126 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Liquid Glass</title>
+  <meta charset="UTF-8" />
+  <title>Liquid Glass Blob</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #e6e6e6; }
-    canvas { display: block; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #e9edf5;
+    }
+    canvas {
+      display: block;
+    }
   </style>
 </head>
 <body>
 <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
 <script>
-const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  document.body.appendChild(renderer.domElement);
 
-const geometry = new THREE.PlaneGeometry(2, 2);
+  const geometry = new THREE.PlaneGeometry(2, 2);
 
-const material = new THREE.ShaderMaterial({
-  uniforms: {
-    time: { value: 0.0 }
-  },
-  vertexShader: `
-    void main() {
-      gl_Position = vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform float time;
+  const uniforms = {
+    time: { value: 0.0 },
+    resolution: { value: new THREE.Vector2() }
+  };
 
-    vec3 chromatic(vec2 uv) {
-      float r = sin(uv.x * 10. + time) * 0.01;
-      float g = sin(uv.y * 10. + time) * 0.01;
-      float b = sin((uv.x + uv.y) * 10. + time) * 0.01;
-      return vec3(r, g, b);
-    }
+  const material = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader: `
+      void main() {
+        gl_Position = vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float time;
+      uniform vec2 resolution;
 
-    void main() {
-      vec2 uv = gl_FragCoord.xy / vec2(1920.0, 1080.0);
+      // prosty SDF bloba
+      float blob(vec2 p, vec2 c, float r) {
+        return length(p - c) - r;
+      }
 
-      float wave = sin(uv.x * 10.0 + time) * 0.03;
-      uv.y += wave;
+      void main() {
+        // uv w [-1,1] z poprawką na proporcje
+        vec2 uv = (gl_FragCoord.xy / resolution.xy) * 2.0 - 1.0;
+        uv.x *= resolution.x / resolution.y;
 
-      vec3 color = vec3(0.9);
+        // tło
+        vec3 bg = vec3(0.94, 0.96, 0.99);
 
-      color += chromatic(uv);
+        // ruch centrum bloba
+        vec2 center = vec2(
+          sin(time * 0.5) * 0.15,
+          cos(time * 0.4) * 0.1
+        );
 
-      gl_FragColor = vec4(color, 1.0);
-    }
-  `
-});
+        float d = blob(uv, center, 0.55);
 
-const mesh = new THREE.Mesh(geometry, material);
-scene.add(mesh);
+        // maska szkła
+        float glassMask = smoothstep(0.04, -0.02, d);   // wnętrze
+        float edgeMask  = smoothstep(0.03, 0.0, abs(d)); // okolice krawędzi
 
-function animate(t) {
-  material.uniforms.time.value = t * 0.001;
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
-}
-animate();
+        // bazowy kolor = tło
+        vec3 col = bg;
+
+        // szkło wewnątrz
+        if (glassMask > 0.0) {
+          // lekka refrakcja (falowanie wnętrza)
+          float wave = sin(d * 40.0 - time * 3.0) * 0.5 + 0.5;
+          vec3 glassBase = mix(vec3(0.90, 0.92, 0.96), vec3(0.98, 0.99, 1.0), wave);
+
+          // subtelne przyciemnienie przy krawędzi
+          float rimDark = smoothstep(-0.4, 0.0, d);
+          glassBase -= rimDark * 0.12;
+
+          col = mix(bg, glassBase, glassMask);
+        }
+
+        // chromatic edge – kolorowa obwódka
+        float rim = smoothstep(0.04, 0.0, abs(d));
+
+        // kierunek normalny (orientacyjny)
+        vec2 n = normalize(uv - center + 0.0001);
+
+        float rShift = rim * (0.4 + 0.2 * n.x);
+        float gShift = rim * 0.18;
+        float bShift = rim * (0.45 - 0.2 * n.y);
+
+        col += vec3(rShift, gShift, bShift);
+
+        // lekkie globalne ziarno/gradient, żeby nie było totalnie płasko
+        float vignette = smoothstep(1.2, 0.3, length(uv));
+        col *= mix(1.02, 0.96, vignette);
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+
+  function onResize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    renderer.setSize(w, h);
+    uniforms.resolution.value.set(w, h);
+  }
+
+  window.addEventListener('resize', onResize);
+  onResize();
+
+  function animate(t) {
+    uniforms.time.value = t * 0.001;
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  animate();
 </script>
 </body>
 </html>
