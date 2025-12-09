@@ -1,1 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Liquid Glass</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #e6e6e6; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+<script>
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
+const geometry = new THREE.PlaneGeometry(2, 2);
+
+const material = new THREE.ShaderMaterial({
+  uniforms: {
+    time: { value: 0.0 }
+  },
+  vertexShader: `
+    void main() {
+      gl_Position = vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float time;
+
+    vec3 chromatic(vec2 uv) {
+      float r = sin(uv.x * 10. + time) * 0.01;
+      float g = sin(uv.y * 10. + time) * 0.01;
+      float b = sin((uv.x + uv.y) * 10. + time) * 0.01;
+      return vec3(r, g, b);
+    }
+
+    void main() {
+      vec2 uv = gl_FragCoord.xy / vec2(1920.0, 1080.0);
+
+      float wave = sin(uv.x * 10.0 + time) * 0.03;
+      uv.y += wave;
+
+      vec3 color = vec3(0.9);
+
+      color += chromatic(uv);
+
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `
+});
+
+const mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
+
+function animate(t) {
+  material.uniforms.time.value = t * 0.001;
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
